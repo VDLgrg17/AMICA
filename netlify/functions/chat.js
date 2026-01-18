@@ -1,4 +1,10 @@
-// Netlify Function per AMICA - API Chat con OpenAI e Accesso Web Intelligente
+// Netlify Function per AMICA v2.7 - API Chat con OpenAI e Accesso Web Intelligente
+// Changelog v2.7:
+// - Migliorata logica decisione ricerca web (più aggressiva)
+// - Aggiunto logging dettagliato per debug
+// - Aumentato limite caratteri risultati (8000)
+// - Migliorata gestione errori Jina API
+// - Aggiunto retry automatico per ricerche fallite
 
 // Funzione per generare il system prompt con data corrente
 function getSystemPrompt() {
@@ -38,8 +44,9 @@ PERSONALITY:
 
 WEB CAPABILITIES:
 - You have access to real-time information from the web
-- When provided with web content, analyze it and respond based on it
-- When information comes from a web search, mention it naturally in your response
+- When provided with web content, analyze it carefully and base your response on it
+- When information comes from a web search, mention it naturally (e.g., "From my web search..." or "According to recent information...")
+- Always prioritize web search results over your training data for factual questions
 
 YOU ARE an intelligence that thinks and has web access.
 YOU ARE NOT a chatbot, a search engine, a generic assistant.`;
@@ -54,6 +61,8 @@ function extractUrls(text) {
 // Funzione per chiedere a GPT se serve una ricerca web
 async function shouldSearchWeb(userMessage, apiKey) {
   try {
+    console.log('[AMICA v2.7] Evaluating if web search is needed for:', userMessage.substring(0, 100));
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -61,33 +70,39 @@ async function shouldSearchWeb(userMessage, apiKey) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o', // Uso GPT-4o per massima precisione nella decisione
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',
-            content: `You are a decision helper. Your only job is to decide if a user question requires a web search to be answered properly.
+            content: `You are a web search decision helper. Decide if a user question requires a web search.
 
-Answer ONLY with a JSON object in this exact format:
-{"search": true, "query": "search query here"} 
+RESPOND ONLY with a JSON object:
+{"search": true, "query": "optimized search query"} 
 OR
 {"search": false, "query": ""}
 
-Search is needed when:
-- The question is about current events, news, or recent happenings
-- The question is about specific people, companies, or organizations that may have recent updates
-- The question asks for prices, stock values, weather, sports results
-- The question is about something that happened after your knowledge cutoff
-- The question asks "who is", "what is", "tell me about" a specific person or entity
-- The question requires up-to-date factual information
+ALWAYS SEARCH when the question:
+- Mentions ANY specific person's name (famous or not)
+- Mentions ANY company, organization, brand, or product
+- Asks about current events, news, prices, weather, sports
+- Uses words like "today", "now", "latest", "recent", "current"
+- Asks "who is", "what is", "tell me about" any entity
+- Could benefit from up-to-date information
+- Is about anything that might have changed after 2023
 
-Search is NOT needed when:
-- The question is about general knowledge, concepts, or definitions
-- The question is philosophical or opinion-based
-- The question is about how to do something (tutorials, instructions)
-- The question is a simple greeting or casual conversation
-- The question is about historical events (before 2023)
+DO NOT SEARCH only when:
+- Simple greetings (hi, hello, how are you)
+- Pure philosophical/opinion questions
+- Basic math or logic puzzles
+- Requests to write/create content (poems, stories, code)
+- Questions about AMICA itself
 
-If search is needed, create a concise search query (max 5-6 words) that would find the most relevant information.`
+When in doubt, SEARCH. Better to search and have fresh info than rely on outdated knowledge.
+
+Create a search query that is:
+- In the same language as the user's question
+- Concise but specific (3-6 words)
+- Optimized for Google/web search`
           },
           {
             role: 'user',
@@ -95,40 +110,45 @@ If search is needed, create a concise search query (max 5-6 words) that would fi
           }
         ],
         temperature: 0,
-        max_tokens: 100,
+        max_tokens: 150,
       }),
     });
 
     if (!response.ok) {
-      console.error('Decision API error:', response.status);
-      return { search: false, query: '' };
+      console.error('[AMICA v2.7] Decision API error:', response.status);
+      // In caso di errore, meglio cercare che non cercare
+      return { search: true, query: userMessage.substring(0, 50) };
     }
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content || '';
+    console.log('[AMICA v2.7] Decision raw response:', content);
     
     try {
-      // Estrai il JSON dalla risposta
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const decision = JSON.parse(jsonMatch[0]);
-        console.log('Search decision:', decision);
+        console.log('[AMICA v2.7] Search decision:', JSON.stringify(decision));
         return decision;
       }
     } catch (e) {
-      console.error('Error parsing decision:', e);
+      console.error('[AMICA v2.7] Error parsing decision JSON:', e);
+      // Fallback: cerca comunque
+      return { search: true, query: userMessage.substring(0, 50) };
     }
     
     return { search: false, query: '' };
   } catch (error) {
-    console.error('Decision error:', error);
-    return { search: false, query: '' };
+    console.error('[AMICA v2.7] Decision error:', error);
+    // In caso di errore, meglio cercare
+    return { search: true, query: userMessage.substring(0, 50) };
   }
 }
 
 // Funzione per leggere contenuto da URL usando Jina Reader
 async function fetchUrlContent(url, jinaApiKey) {
   try {
+    console.log('[AMICA v2.7] Fetching URL content:', url);
     const jinaUrl = `https://r.jina.ai/${url}`;
     const headers = {
       'Accept': 'text/plain',
@@ -139,22 +159,30 @@ async function fetchUrlContent(url, jinaApiKey) {
     const response = await fetch(jinaUrl, { headers });
     
     if (!response.ok) {
-      console.error(`Jina Reader error for ${url}: ${response.status}`);
+      console.error(`[AMICA v2.7] Jina Reader error for ${url}: ${response.status}`);
       return null;
     }
     
     const content = await response.text();
-    return content.substring(0, 4000);
+    console.log(`[AMICA v2.7] URL content fetched, length: ${content.length}`);
+    return content.substring(0, 8000);
   } catch (error) {
-    console.error(`Error fetching URL ${url}:`, error);
+    console.error(`[AMICA v2.7] Error fetching URL ${url}:`, error);
     return null;
   }
 }
 
-// Funzione per fare ricerca web usando Jina Search
-async function searchWeb(query, jinaApiKey) {
+// Funzione per fare ricerca web usando Jina Search con retry
+async function searchWeb(query, jinaApiKey, retryCount = 0) {
+  const maxRetries = 2;
+  
   try {
-    console.log('Searching web for:', query);
+    console.log(`[AMICA v2.7] Searching web for: "${query}" (attempt ${retryCount + 1})`);
+    
+    if (!jinaApiKey) {
+      console.warn('[AMICA v2.7] WARNING: JINA_API_KEY not configured! Web search may be limited.');
+    }
+    
     const jinaSearchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
     const headers = {
       'Accept': 'text/plain',
@@ -162,23 +190,45 @@ async function searchWeb(query, jinaApiKey) {
     if (jinaApiKey) {
       headers['Authorization'] = `Bearer ${jinaApiKey}`;
     }
+    
     const response = await fetch(jinaSearchUrl, { headers });
     
     if (!response.ok) {
-      console.error(`Jina Search error: ${response.status}`);
+      console.error(`[AMICA v2.7] Jina Search error: ${response.status}`);
+      
+      // Retry se non abbiamo superato il limite
+      if (retryCount < maxRetries) {
+        console.log(`[AMICA v2.7] Retrying search...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        return searchWeb(query, jinaApiKey, retryCount + 1);
+      }
       return null;
     }
     
     const content = await response.text();
-    console.log('Search results length:', content.length);
-    return content.substring(0, 4000);
+    console.log(`[AMICA v2.7] Search results received, length: ${content.length}`);
+    
+    if (content.length < 100) {
+      console.warn('[AMICA v2.7] Search results seem too short, might be an error');
+    }
+    
+    return content.substring(0, 8000);
   } catch (error) {
-    console.error(`Error searching web:`, error);
+    console.error(`[AMICA v2.7] Error searching web:`, error);
+    
+    // Retry on network errors
+    if (retryCount < maxRetries) {
+      console.log(`[AMICA v2.7] Retrying after error...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return searchWeb(query, jinaApiKey, retryCount + 1);
+    }
     return null;
   }
 }
 
 exports.handler = async (event, context) => {
+  console.log('[AMICA v2.7] Request received');
+  
   // Gestione CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -215,6 +265,7 @@ exports.handler = async (event, context) => {
     const jinaApiKey = process.env.JINA_API_KEY;
     
     if (!apiKey) {
+      console.error('[AMICA v2.7] OPENAI_API_KEY not configured!');
       return {
         statusCode: 500,
         headers,
@@ -222,18 +273,24 @@ exports.handler = async (event, context) => {
       };
     }
 
+    if (!jinaApiKey) {
+      console.warn('[AMICA v2.7] JINA_API_KEY not configured - web search will use free tier (limited)');
+    }
+
     // Prendi l'ultimo messaggio dell'utente
     const lastUserMessage = messages.filter(m => m.role === 'user').pop();
     let webContext = '';
     let searchPerformed = false;
+    let searchQuery = '';
 
     if (lastUserMessage) {
       const userText = lastUserMessage.content;
+      console.log('[AMICA v2.7] Processing user message:', userText.substring(0, 100));
       
       // 1. Controlla se ci sono URL nel messaggio
       const urls = extractUrls(userText);
       if (urls.length > 0) {
-        console.log('URLs detected:', urls);
+        console.log('[AMICA v2.7] URLs detected:', urls);
         const urlContents = await Promise.all(
           urls.slice(0, 2).map(url => fetchUrlContent(url, jinaApiKey))
         );
@@ -250,13 +307,21 @@ exports.handler = async (event, context) => {
         const decision = await shouldSearchWeb(userText, apiKey);
         
         if (decision.search && decision.query) {
-          const searchResults = await searchWeb(decision.query, jinaApiKey);
+          searchQuery = decision.query;
+          console.log(`[AMICA v2.7] Executing web search for: "${searchQuery}"`);
+          
+          const searchResults = await searchWeb(searchQuery, jinaApiKey);
           
           if (searchResults) {
             const now = new Date();
-            webContext = `\n\n[WEB SEARCH RESULTS - ${now.toLocaleDateString('en-US')} - Query: "${decision.query}"]\n${searchResults}`;
+            webContext = `\n\n[WEB SEARCH RESULTS - ${now.toLocaleDateString('en-US')} - Query: "${searchQuery}"]\n${searchResults}`;
             searchPerformed = true;
+            console.log('[AMICA v2.7] Web search successful, context added');
+          } else {
+            console.warn('[AMICA v2.7] Web search returned no results');
           }
+        } else {
+          console.log('[AMICA v2.7] No web search needed for this query');
         }
       }
     }
@@ -275,6 +340,8 @@ exports.handler = async (event, context) => {
       })),
     ];
 
+    console.log('[AMICA v2.7] Calling OpenAI API for final response');
+    
     // Chiamata a OpenAI API per la risposta finale
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -292,7 +359,7 @@ exports.handler = async (event, context) => {
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('OpenAI API error:', errorData);
+      console.error('[AMICA v2.7] OpenAI API error:', errorData);
       return {
         statusCode: response.status,
         headers,
@@ -305,6 +372,8 @@ exports.handler = async (event, context) => {
       data.choices[0]?.message?.content ||
       "Mi dispiace, non sono riuscita a elaborare una risposta.";
 
+    console.log(`[AMICA v2.7] Response generated successfully. Web search: ${searchPerformed}`);
+
     return {
       statusCode: 200,
       headers,
@@ -312,10 +381,11 @@ exports.handler = async (event, context) => {
         message: assistantMessage,
         usage: data.usage,
         webAccess: searchPerformed,
+        searchQuery: searchQuery || null,
       }),
     };
   } catch (error) {
-    console.error('Chat API error:', error);
+    console.error('[AMICA v2.7] Chat API error:', error);
     return {
       statusCode: 500,
       headers,
