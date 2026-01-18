@@ -127,14 +127,16 @@ If search is needed, create a concise search query (max 5-6 words) that would fi
 }
 
 // Funzione per leggere contenuto da URL usando Jina Reader
-async function fetchUrlContent(url) {
+async function fetchUrlContent(url, jinaApiKey) {
   try {
     const jinaUrl = `https://r.jina.ai/${url}`;
-    const response = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'text/plain',
-      },
-    });
+    const headers = {
+      'Accept': 'text/plain',
+    };
+    if (jinaApiKey) {
+      headers['Authorization'] = `Bearer ${jinaApiKey}`;
+    }
+    const response = await fetch(jinaUrl, { headers });
     
     if (!response.ok) {
       console.error(`Jina Reader error for ${url}: ${response.status}`);
@@ -150,15 +152,17 @@ async function fetchUrlContent(url) {
 }
 
 // Funzione per fare ricerca web usando Jina Search
-async function searchWeb(query) {
+async function searchWeb(query, jinaApiKey) {
   try {
     console.log('Searching web for:', query);
     const jinaSearchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
-    const response = await fetch(jinaSearchUrl, {
-      headers: {
-        'Accept': 'text/plain',
-      },
-    });
+    const headers = {
+      'Accept': 'text/plain',
+    };
+    if (jinaApiKey) {
+      headers['Authorization'] = `Bearer ${jinaApiKey}`;
+    }
+    const response = await fetch(jinaSearchUrl, { headers });
     
     if (!response.ok) {
       console.error(`Jina Search error: ${response.status}`);
@@ -208,6 +212,8 @@ exports.handler = async (event, context) => {
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
+    const jinaApiKey = process.env.JINA_API_KEY;
+    
     if (!apiKey) {
       return {
         statusCode: 500,
@@ -229,7 +235,7 @@ exports.handler = async (event, context) => {
       if (urls.length > 0) {
         console.log('URLs detected:', urls);
         const urlContents = await Promise.all(
-          urls.slice(0, 2).map(url => fetchUrlContent(url))
+          urls.slice(0, 2).map(url => fetchUrlContent(url, jinaApiKey))
         );
         
         const validContents = urlContents.filter(c => c !== null);
@@ -244,7 +250,7 @@ exports.handler = async (event, context) => {
         const decision = await shouldSearchWeb(userText, apiKey);
         
         if (decision.search && decision.query) {
-          const searchResults = await searchWeb(decision.query);
+          const searchResults = await searchWeb(decision.query, jinaApiKey);
           
           if (searchResults) {
             const now = new Date();
