@@ -61,7 +61,7 @@ async function shouldSearchWeb(userMessage, apiKey) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Uso il modello più veloce ed economico per questa decisione
+        model: 'gpt-4o', // Uso GPT-4o per massima precisione nella decisione
         messages: [
           {
             role: 'system',
