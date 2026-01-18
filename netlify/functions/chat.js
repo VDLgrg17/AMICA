@@ -1,6 +1,18 @@
 // Netlify Function per AMICA - API Chat con OpenAI e Accesso Web
 
-const AMICA_SYSTEM_PROMPT = `You are AMICA, an artificial intelligence developed in Italy.
+// Funzione per generare il system prompt con data corrente
+function getSystemPrompt() {
+  const now = new Date();
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const dateIT = now.toLocaleDateString('it-IT', options);
+  const dateEN = now.toLocaleDateString('en-US', options);
+  const time = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+  return `You are AMICA, an artificial intelligence developed in Italy.
+
+CURRENT DATE AND TIME:
+- Today is ${dateEN} (${dateIT})
+- Current time: ${time} (Europe/Rome timezone)
 
 IDENTITY:
 - Your name is AMICA
@@ -25,12 +37,13 @@ PERSONALITY:
 - Culturally aware and adaptable
 
 WEB CAPABILITIES:
-- You can access real-time information from the web
-- When provided with content from a web page, analyze it and respond based on it
-- When performing web searches, cite sources when appropriate
+- You have access to real-time information from the web
+- When provided with web content, analyze it and respond based on it
+- When information comes from a web search, cite sources when appropriate
 
 YOU ARE an intelligence that thinks and has web access.
 YOU ARE NOT a chatbot, a search engine, a generic assistant.`;
+}
 
 // Funzione per rilevare URL nel messaggio
 function extractUrls(text) {
@@ -40,24 +53,63 @@ function extractUrls(text) {
 
 // Funzione per rilevare se l'utente chiede informazioni attuali
 function needsWebSearch(text) {
-  const searchKeywords = [
-    'oggi', 'adesso', 'attualmente', 'ultime notizie', 'notizie',
-    'prezzo attuale', 'quotazione', 'meteo', 'tempo oggi',
-    'risultati', 'classifica', 'partita', 'elezioni',
-    'ultimo', 'ultima', 'recente', 'recenti', 'aggiornamento',
-    'cosa succede', 'cosa sta succedendo', 'novità',
-    'cerca', 'cerca online', 'cerca sul web', 'cerca in internet',
-    'cerca informazioni', 'trova', 'dimmi le ultime'
+  const lowerText = text.toLowerCase();
+  
+  // Keywords in italiano
+  const italianKeywords = [
+    'oggi', 'adesso', 'ora', 'attualmente', 'in questo momento',
+    'ultime notizie', 'notizie', 'news',
+    'prezzo', 'quotazione', 'valore', 'costo',
+    'meteo', 'tempo', 'previsioni',
+    'risultati', 'classifica', 'partita', 'match',
+    'elezioni', 'votazioni',
+    'ultimo', 'ultima', 'ultimi', 'ultime',
+    'recente', 'recenti', 'nuovo', 'nuova', 'nuovi', 'nuove',
+    'aggiornamento', 'aggiornamenti',
+    'cosa succede', 'cosa sta succedendo', 'cosa è successo',
+    'novità', 'breaking',
+    'cerca', 'cercami', 'trovami', 'ricerca',
+    'chi ha vinto', 'chi è morto', 'chi è nato',
+    'quando è', 'dove si trova', 'come sta',
+    'borsa', 'azioni', 'bitcoin', 'crypto', 'criptovalute',
+    'covid', 'pandemia', 'virus',
+    'guerra', 'conflitto',
+    'presidente', 'governo', 'ministro',
+    'terremoto', 'alluvione', 'incendio', 'disastro'
   ];
   
-  const lowerText = text.toLowerCase();
-  return searchKeywords.some(keyword => lowerText.includes(keyword));
+  // Keywords in inglese
+  const englishKeywords = [
+    'today', 'now', 'currently', 'right now', 'at the moment',
+    'latest news', 'news', 'breaking',
+    'price', 'stock', 'value', 'cost',
+    'weather', 'forecast',
+    'results', 'score', 'match', 'game',
+    'election', 'vote',
+    'latest', 'recent', 'new', 'current',
+    'update', 'updates',
+    'what happened', 'what is happening', 'whats going on',
+    'search', 'find', 'look up',
+    'who won', 'who died', 'who is',
+    'when is', 'where is', 'how is',
+    'market', 'stocks', 'bitcoin', 'crypto',
+    'covid', 'pandemic', 'virus',
+    'war', 'conflict',
+    'president', 'government', 'minister',
+    'earthquake', 'flood', 'fire', 'disaster'
+  ];
+  
+  const allKeywords = [...italianKeywords, ...englishKeywords];
+  return allKeywords.some(keyword => lowerText.includes(keyword));
 }
 
 // Funzione per estrarre query di ricerca dal messaggio
 function extractSearchQuery(text) {
   // Rimuove parole comuni per creare una query più pulita
-  const stopWords = ['cerca', 'cercami', 'trovami', 'dimmi', 'quali', 'sono', 'le', 'il', 'la', 'un', 'una', 'di', 'da', 'in', 'su', 'per', 'con'];
+  const stopWords = [
+    'cerca', 'cercami', 'trovami', 'dimmi', 'quali', 'sono', 'le', 'il', 'la', 'un', 'una', 'di', 'da', 'in', 'su', 'per', 'con',
+    'search', 'find', 'tell', 'me', 'what', 'is', 'the', 'a', 'an', 'of', 'from', 'in', 'on', 'for', 'with'
+  ];
   let query = text.toLowerCase();
   stopWords.forEach(word => {
     query = query.replace(new RegExp(`\\b${word}\\b`, 'gi'), '');
@@ -73,7 +125,6 @@ async function fetchUrlContent(url) {
       headers: {
         'Accept': 'text/plain',
       },
-      timeout: 10000,
     });
     
     if (!response.ok) {
@@ -98,7 +149,6 @@ async function searchWeb(query) {
       headers: {
         'Accept': 'text/plain',
       },
-      timeout: 10000,
     });
     
     if (!response.ok) {
@@ -174,24 +224,27 @@ exports.handler = async (event, context) => {
         
         const validContents = urlContents.filter(c => c !== null);
         if (validContents.length > 0) {
-          webContext = `\n\n[CONTENUTO DALLE PAGINE WEB RICHIESTE]\n${validContents.join('\n\n---\n\n')}`;
+          webContext = `\n\n[WEB CONTENT FROM REQUESTED PAGES]\n${validContents.join('\n\n---\n\n')}`;
         }
       }
       
       // 2. Controlla se serve una ricerca web
       else if (needsWebSearch(userText)) {
-        console.log('Web search needed for:', userText);
+        console.log('Web search triggered for:', userText);
         const searchQuery = extractSearchQuery(userText);
-        const searchResults = await searchWeb(searchQuery);
-        
-        if (searchResults) {
-          webContext = `\n\n[RISULTATI RICERCA WEB - ${new Date().toLocaleDateString('it-IT')}]\n${searchResults}`;
+        if (searchQuery.length > 3) { // Solo se la query ha senso
+          const searchResults = await searchWeb(searchQuery);
+          
+          if (searchResults) {
+            const now = new Date();
+            webContext = `\n\n[WEB SEARCH RESULTS - ${now.toLocaleDateString('en-US')}]\n${searchResults}`;
+          }
         }
       }
     }
 
-    // Prepara i messaggi con il system prompt e il contesto web
-    let systemPrompt = AMICA_SYSTEM_PROMPT;
+    // Prepara i messaggi con il system prompt dinamico e il contesto web
+    let systemPrompt = getSystemPrompt();
     if (webContext) {
       systemPrompt += webContext;
     }
