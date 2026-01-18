@@ -1,4 +1,4 @@
-// Netlify Function per AMICA - API Chat con OpenAI
+// Netlify Function per AMICA - API Chat con OpenAI e Accesso Web
 
 const AMICA_SYSTEM_PROMPT = `Tu sei AMICA, un'intelligenza artificiale sviluppata in Italia.
 
@@ -22,10 +22,99 @@ PERSONALITÀ:
 - Italiano autentico, non tradotto
 - Comprensione culturale italiana
 
-SEI un'intelligenza che pensa.
+CAPACITÀ WEB:
+- Puoi accedere a informazioni in tempo reale dal web
+- Quando ti viene fornito contenuto da una pagina web, analizzalo e rispondi in base ad esso
+- Quando fai una ricerca web, cita le fonti quando appropriato
+- Indica sempre quando le informazioni provengono da una ricerca web recente
+
+SEI un'intelligenza che pensa e ha accesso al web.
 NON SEI un chatbot, un motore di ricerca, un assistente generico.
 
 Rispondi sempre in italiano, con uno stile naturale e conversazionale.`;
+
+// Funzione per rilevare URL nel messaggio
+function extractUrls(text) {
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
+  return text.match(urlRegex) || [];
+}
+
+// Funzione per rilevare se l'utente chiede informazioni attuali
+function needsWebSearch(text) {
+  const searchKeywords = [
+    'oggi', 'adesso', 'attualmente', 'ultime notizie', 'notizie',
+    'prezzo attuale', 'quotazione', 'meteo', 'tempo oggi',
+    'risultati', 'classifica', 'partita', 'elezioni',
+    'ultimo', 'ultima', 'recente', 'recenti', 'aggiornamento',
+    'cosa succede', 'cosa sta succedendo', 'novità',
+    'cerca', 'cerca online', 'cerca sul web', 'cerca in internet',
+    'cerca informazioni', 'trova', 'dimmi le ultime'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return searchKeywords.some(keyword => lowerText.includes(keyword));
+}
+
+// Funzione per estrarre query di ricerca dal messaggio
+function extractSearchQuery(text) {
+  // Rimuove parole comuni per creare una query più pulita
+  const stopWords = ['cerca', 'cercami', 'trovami', 'dimmi', 'quali', 'sono', 'le', 'il', 'la', 'un', 'una', 'di', 'da', 'in', 'su', 'per', 'con'];
+  let query = text.toLowerCase();
+  stopWords.forEach(word => {
+    query = query.replace(new RegExp(`\\b${word}\\b`, 'gi'), '');
+  });
+  return query.trim().substring(0, 200); // Limita a 200 caratteri
+}
+
+// Funzione per leggere contenuto da URL usando Jina Reader
+async function fetchUrlContent(url) {
+  try {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'text/plain',
+      },
+      timeout: 10000,
+    });
+    
+    if (!response.ok) {
+      console.error(`Jina Reader error for ${url}: ${response.status}`);
+      return null;
+    }
+    
+    const content = await response.text();
+    // Limita il contenuto a ~4000 caratteri per non sovraccaricare il contesto
+    return content.substring(0, 4000);
+  } catch (error) {
+    console.error(`Error fetching URL ${url}:`, error);
+    return null;
+  }
+}
+
+// Funzione per fare ricerca web usando Jina Search
+async function searchWeb(query) {
+  try {
+    const jinaSearchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
+    const response = await fetch(jinaSearchUrl, {
+      headers: {
+        'Accept': 'text/plain',
+      },
+      timeout: 10000,
+    });
+    
+    if (!response.ok) {
+      console.error(`Jina Search error: ${response.status}`);
+      return null;
+    }
+    
+    const content = await response.text();
+    // Limita i risultati a ~3000 caratteri
+    return content.substring(0, 3000);
+  } catch (error) {
+    console.error(`Error searching web:`, error);
+    return null;
+  }
+}
 
 exports.handler = async (event, context) => {
   // Gestione CORS
@@ -69,9 +158,47 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Prepara i messaggi con il system prompt
+    // Prendi l'ultimo messaggio dell'utente
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    let webContext = '';
+
+    if (lastUserMessage) {
+      const userText = lastUserMessage.content;
+      
+      // 1. Controlla se ci sono URL nel messaggio
+      const urls = extractUrls(userText);
+      if (urls.length > 0) {
+        console.log('URLs detected:', urls);
+        const urlContents = await Promise.all(
+          urls.slice(0, 2).map(url => fetchUrlContent(url)) // Max 2 URL
+        );
+        
+        const validContents = urlContents.filter(c => c !== null);
+        if (validContents.length > 0) {
+          webContext = `\n\n[CONTENUTO DALLE PAGINE WEB RICHIESTE]\n${validContents.join('\n\n---\n\n')}`;
+        }
+      }
+      
+      // 2. Controlla se serve una ricerca web
+      else if (needsWebSearch(userText)) {
+        console.log('Web search needed for:', userText);
+        const searchQuery = extractSearchQuery(userText);
+        const searchResults = await searchWeb(searchQuery);
+        
+        if (searchResults) {
+          webContext = `\n\n[RISULTATI RICERCA WEB - ${new Date().toLocaleDateString('it-IT')}]\n${searchResults}`;
+        }
+      }
+    }
+
+    // Prepara i messaggi con il system prompt e il contesto web
+    let systemPrompt = AMICA_SYSTEM_PROMPT;
+    if (webContext) {
+      systemPrompt += webContext;
+    }
+
     const apiMessages = [
-      { role: 'system', content: AMICA_SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -114,6 +241,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         message: assistantMessage,
         usage: data.usage,
+        webAccess: webContext ? true : false,
       }),
     };
   } catch (error) {
