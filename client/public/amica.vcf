@@ -1,0 +1,10 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:AMICA
+N:L'AI Italiana;AMICA;;;
+TEL;TYPE=CELL:+123 4567890
+URL:https://amica-ai.netlify.app
+NOTE:Tocca il sito web per parlare con me. Sono AMICA, l'intelligenza artificiale italiana.
+ORG:FXG Engineering
+TITLE:L'intelligenza artificiale italiana
+END:VCARD
