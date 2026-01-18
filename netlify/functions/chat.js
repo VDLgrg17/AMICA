@@ -1,4 +1,4 @@
-// Netlify Function per AMICA - API Chat con OpenAI e Accesso Web
+// Netlify Function per AMICA - API Chat con OpenAI e Accesso Web Intelligente
 
 // Funzione per generare il system prompt con data corrente
 function getSystemPrompt() {
@@ -39,7 +39,7 @@ PERSONALITY:
 WEB CAPABILITIES:
 - You have access to real-time information from the web
 - When provided with web content, analyze it and respond based on it
-- When information comes from a web search, cite sources when appropriate
+- When information comes from a web search, mention it naturally in your response
 
 YOU ARE an intelligence that thinks and has web access.
 YOU ARE NOT a chatbot, a search engine, a generic assistant.`;
@@ -51,70 +51,79 @@ function extractUrls(text) {
   return text.match(urlRegex) || [];
 }
 
-// Funzione per rilevare se l'utente chiede informazioni attuali
-function needsWebSearch(text) {
-  const lowerText = text.toLowerCase();
-  
-  // Keywords in italiano
-  const italianKeywords = [
-    'oggi', 'adesso', 'ora', 'attualmente', 'in questo momento',
-    'ultime notizie', 'notizie', 'news',
-    'prezzo', 'quotazione', 'valore', 'costo',
-    'meteo', 'tempo', 'previsioni',
-    'risultati', 'classifica', 'partita', 'match',
-    'elezioni', 'votazioni',
-    'ultimo', 'ultima', 'ultimi', 'ultime',
-    'recente', 'recenti', 'nuovo', 'nuova', 'nuovi', 'nuove',
-    'aggiornamento', 'aggiornamenti',
-    'cosa succede', 'cosa sta succedendo', 'cosa è successo',
-    'novità', 'breaking',
-    'cerca', 'cercami', 'trovami', 'ricerca',
-    'chi ha vinto', 'chi è morto', 'chi è nato',
-    'quando è', 'dove si trova', 'come sta',
-    'borsa', 'azioni', 'bitcoin', 'crypto', 'criptovalute',
-    'covid', 'pandemia', 'virus',
-    'guerra', 'conflitto',
-    'presidente', 'governo', 'ministro',
-    'terremoto', 'alluvione', 'incendio', 'disastro'
-  ];
-  
-  // Keywords in inglese
-  const englishKeywords = [
-    'today', 'now', 'currently', 'right now', 'at the moment',
-    'latest news', 'news', 'breaking',
-    'price', 'stock', 'value', 'cost',
-    'weather', 'forecast',
-    'results', 'score', 'match', 'game',
-    'election', 'vote',
-    'latest', 'recent', 'new', 'current',
-    'update', 'updates',
-    'what happened', 'what is happening', 'whats going on',
-    'search', 'find', 'look up',
-    'who won', 'who died', 'who is',
-    'when is', 'where is', 'how is',
-    'market', 'stocks', 'bitcoin', 'crypto',
-    'covid', 'pandemic', 'virus',
-    'war', 'conflict',
-    'president', 'government', 'minister',
-    'earthquake', 'flood', 'fire', 'disaster'
-  ];
-  
-  const allKeywords = [...italianKeywords, ...englishKeywords];
-  return allKeywords.some(keyword => lowerText.includes(keyword));
-}
+// Funzione per chiedere a GPT se serve una ricerca web
+async function shouldSearchWeb(userMessage, apiKey) {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini', // Uso il modello più veloce ed economico per questa decisione
+        messages: [
+          {
+            role: 'system',
+            content: `You are a decision helper. Your only job is to decide if a user question requires a web search to be answered properly.
 
-// Funzione per estrarre query di ricerca dal messaggio
-function extractSearchQuery(text) {
-  // Rimuove parole comuni per creare una query più pulita
-  const stopWords = [
-    'cerca', 'cercami', 'trovami', 'dimmi', 'quali', 'sono', 'le', 'il', 'la', 'un', 'una', 'di', 'da', 'in', 'su', 'per', 'con',
-    'search', 'find', 'tell', 'me', 'what', 'is', 'the', 'a', 'an', 'of', 'from', 'in', 'on', 'for', 'with'
-  ];
-  let query = text.toLowerCase();
-  stopWords.forEach(word => {
-    query = query.replace(new RegExp(`\\b${word}\\b`, 'gi'), '');
-  });
-  return query.trim().substring(0, 200); // Limita a 200 caratteri
+Answer ONLY with a JSON object in this exact format:
+{"search": true, "query": "search query here"} 
+OR
+{"search": false, "query": ""}
+
+Search is needed when:
+- The question is about current events, news, or recent happenings
+- The question is about specific people, companies, or organizations that may have recent updates
+- The question asks for prices, stock values, weather, sports results
+- The question is about something that happened after your knowledge cutoff
+- The question asks "who is", "what is", "tell me about" a specific person or entity
+- The question requires up-to-date factual information
+
+Search is NOT needed when:
+- The question is about general knowledge, concepts, or definitions
+- The question is philosophical or opinion-based
+- The question is about how to do something (tutorials, instructions)
+- The question is a simple greeting or casual conversation
+- The question is about historical events (before 2023)
+
+If search is needed, create a concise search query (max 5-6 words) that would find the most relevant information.`
+          },
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Decision API error:', response.status);
+      return { search: false, query: '' };
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content || '';
+    
+    try {
+      // Estrai il JSON dalla risposta
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const decision = JSON.parse(jsonMatch[0]);
+        console.log('Search decision:', decision);
+        return decision;
+      }
+    } catch (e) {
+      console.error('Error parsing decision:', e);
+    }
+    
+    return { search: false, query: '' };
+  } catch (error) {
+    console.error('Decision error:', error);
+    return { search: false, query: '' };
+  }
 }
 
 // Funzione per leggere contenuto da URL usando Jina Reader
@@ -133,7 +142,6 @@ async function fetchUrlContent(url) {
     }
     
     const content = await response.text();
-    // Limita il contenuto a ~4000 caratteri per non sovraccaricare il contesto
     return content.substring(0, 4000);
   } catch (error) {
     console.error(`Error fetching URL ${url}:`, error);
@@ -144,6 +152,7 @@ async function fetchUrlContent(url) {
 // Funzione per fare ricerca web usando Jina Search
 async function searchWeb(query) {
   try {
+    console.log('Searching web for:', query);
     const jinaSearchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
     const response = await fetch(jinaSearchUrl, {
       headers: {
@@ -157,8 +166,8 @@ async function searchWeb(query) {
     }
     
     const content = await response.text();
-    // Limita i risultati a ~3000 caratteri
-    return content.substring(0, 3000);
+    console.log('Search results length:', content.length);
+    return content.substring(0, 4000);
   } catch (error) {
     console.error(`Error searching web:`, error);
     return null;
@@ -210,6 +219,7 @@ exports.handler = async (event, context) => {
     // Prendi l'ultimo messaggio dell'utente
     const lastUserMessage = messages.filter(m => m.role === 'user').pop();
     let webContext = '';
+    let searchPerformed = false;
 
     if (lastUserMessage) {
       const userText = lastUserMessage.content;
@@ -219,25 +229,27 @@ exports.handler = async (event, context) => {
       if (urls.length > 0) {
         console.log('URLs detected:', urls);
         const urlContents = await Promise.all(
-          urls.slice(0, 2).map(url => fetchUrlContent(url)) // Max 2 URL
+          urls.slice(0, 2).map(url => fetchUrlContent(url))
         );
         
         const validContents = urlContents.filter(c => c !== null);
         if (validContents.length > 0) {
           webContext = `\n\n[WEB CONTENT FROM REQUESTED PAGES]\n${validContents.join('\n\n---\n\n')}`;
+          searchPerformed = true;
         }
       }
       
-      // 2. Controlla se serve una ricerca web
-      else if (needsWebSearch(userText)) {
-        console.log('Web search triggered for:', userText);
-        const searchQuery = extractSearchQuery(userText);
-        if (searchQuery.length > 3) { // Solo se la query ha senso
-          const searchResults = await searchWeb(searchQuery);
+      // 2. Chiedi a GPT se serve una ricerca web
+      else {
+        const decision = await shouldSearchWeb(userText, apiKey);
+        
+        if (decision.search && decision.query) {
+          const searchResults = await searchWeb(decision.query);
           
           if (searchResults) {
             const now = new Date();
-            webContext = `\n\n[WEB SEARCH RESULTS - ${now.toLocaleDateString('en-US')}]\n${searchResults}`;
+            webContext = `\n\n[WEB SEARCH RESULTS - ${now.toLocaleDateString('en-US')} - Query: "${decision.query}"]\n${searchResults}`;
+            searchPerformed = true;
           }
         }
       }
@@ -257,7 +269,7 @@ exports.handler = async (event, context) => {
       })),
     ];
 
-    // Chiamata a OpenAI API
+    // Chiamata a OpenAI API per la risposta finale
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -293,7 +305,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         message: assistantMessage,
         usage: data.usage,
-        webAccess: webContext ? true : false,
+        webAccess: searchPerformed,
       }),
     };
   } catch (error) {
