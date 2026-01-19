@@ -147,8 +147,9 @@ export default function Home() {
   };
 
   // Funzione Text-to-Speech con OpenAI
-  const speakText = async (text: string) => {
-    if (!voiceEnabled) return;
+  const speakText = async (text: string, forceSpeak: boolean = false) => {
+    // In modalità vocale, parla sempre; altrimenti rispetta voiceEnabled
+    if (!forceSpeak && !voiceEnabled && !isVoiceMode) return;
     
     try {
       setIsSpeaking(true);
@@ -184,11 +185,16 @@ export default function Home() {
       audio.onended = () => {
         setIsSpeaking(false);
         URL.revokeObjectURL(audioUrl);
-        // In modalità vocale, riavvia l'ascolto dopo la risposta
+        // In modalità vocale continua, riavvia automaticamente l'ascolto
         if (isVoiceMode && recognitionRef.current) {
           setTimeout(() => {
-            recognitionRef.current.start();
-            setIsListening(true);
+            try {
+              recognitionRef.current.start();
+              setIsListening(true);
+            } catch (e) {
+              // Ignora errori se già in ascolto
+              console.log('Recognition already started');
+            }
           }, 500);
         }
       };
@@ -196,12 +202,34 @@ export default function Home() {
       audio.onerror = () => {
         setIsSpeaking(false);
         URL.revokeObjectURL(audioUrl);
+        // Anche in caso di errore, riprova ad ascoltare in modalità vocale
+        if (isVoiceMode && recognitionRef.current) {
+          setTimeout(() => {
+            try {
+              recognitionRef.current.start();
+              setIsListening(true);
+            } catch (e) {
+              console.log('Recognition error recovery');
+            }
+          }, 500);
+        }
       };
       
       await audio.play();
     } catch (error) {
       console.error('TTS Error:', error);
       setIsSpeaking(false);
+      // Anche in caso di errore TTS, riprova ad ascoltare in modalità vocale
+      if (isVoiceMode && recognitionRef.current) {
+        setTimeout(() => {
+          try {
+            recognitionRef.current.start();
+            setIsListening(true);
+          } catch (e) {
+            console.log('Recognition error recovery');
+          }
+        }, 500);
+      }
     }
   };
 
@@ -400,10 +428,8 @@ export default function Home() {
         return c;
       }));
 
-      // Se in modalità vocale o voce abilitata, leggi la risposta
-      if (isVoiceMode || voiceEnabled) {
-        speakText(responseText);
-      }
+      // Leggi la risposta (la funzione speakText gestisce internamente quando parlare)
+      speakText(responseText);
     } catch (error) {
       console.error("Error:", error);
       // Mostra messaggio di errore all'utente
@@ -681,13 +707,27 @@ export default function Home() {
           
           {/* Controlli vocali e Dark Mode */}
           <div className="ml-auto flex items-center gap-2">
-            {/* Toggle Voce */}
+            {/* Pulsante Voce: ferma audio se in riproduzione, altrimenti toggle on/off */}
             <button
-              onClick={() => setVoiceEnabled(!voiceEnabled)}
-              className={`p-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors`}
-              title={voiceEnabled ? "Disattiva risposte vocali" : "Attiva risposte vocali"}
+              onClick={() => {
+                if (isSpeaking) {
+                  // Se sta parlando, ferma l'audio
+                  stopSpeaking();
+                } else {
+                  // Altrimenti toggle voce on/off
+                  setVoiceEnabled(!voiceEnabled);
+                }
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                isSpeaking 
+                  ? 'bg-red-500 hover:bg-red-600' 
+                  : isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
+              }`}
+              title={isSpeaking ? "Ferma la voce" : (voiceEnabled ? "Disattiva risposte vocali" : "Attiva risposte vocali")}
             >
-              {voiceEnabled ? (
+              {isSpeaking ? (
+                <VolumeX size={18} className="text-white" />
+              ) : voiceEnabled ? (
                 <Volume2 size={18} className={isDarkMode ? 'text-green-400' : 'text-green-600'} />
               ) : (
                 <VolumeX size={18} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
@@ -724,14 +764,14 @@ export default function Home() {
               )}
             </button>
 
-            {/* Pulsante Condividi */}
+            {/* Pulsante Condividi - sempre visibile, testo solo su desktop */}
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className={`p-2 sm:px-3 sm:py-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors flex items-center gap-2`}
+              className={`p-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors flex items-center gap-2`}
               title="Condividi AMICA"
             >
               <Share2 size={18} className={isDarkMode ? 'text-white/70' : 'text-gray-600'} />
-              <span className={`hidden sm:inline text-sm font-medium ${isDarkMode ? 'text-white/70' : 'text-gray-600'}`}>Condividi</span>
+              <span className={`hidden md:inline text-sm font-medium ${isDarkMode ? 'text-white/70' : 'text-gray-600'}`}>Condividi</span>
             </button>
           </div>
         </header>
