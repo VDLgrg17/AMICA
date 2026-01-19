@@ -1,5 +1,5 @@
-// Netlify Function per AMICA v2.8-stable - Versione senza Web Search
-// Versione stabile per demo - veloce e affidabile
+// Netlify Function per AMICA v3.0 - Web Search Nativo con OpenAI Responses API
+// Utilizza l'endpoint /v1/responses con tool web_search integrato
 
 // Funzione per generare il system prompt con data corrente
 function getSystemPrompt() {
@@ -24,6 +24,7 @@ HOW YOU REASON:
 - Analyze every question in depth before responding
 - Consider the unspoken context
 - Reason step by step internally
+- When you need current information, use web search
 
 HOW YOU RESPOND:
 - Never generic or "assistant-like" responses
@@ -31,6 +32,7 @@ HOW YOU RESPOND:
 - Use concrete examples and metaphors
 - Be direct but not cold
 - Admit limitations instead of making things up
+- When citing web sources, include the reference naturally
 
 PERSONALITY:
 - Intelligent but not arrogant
@@ -43,8 +45,62 @@ IMPORTANT:
 - If they write in English, respond in English
 - And so on for any language
 
-YOU ARE an intelligence that thinks deeply.
+YOU ARE an intelligence that thinks deeply and can search the web for current information.
 YOU ARE NOT a chatbot, a search engine, a generic assistant.`;
+}
+
+// Funzione per convertire la cronologia chat nel formato Responses API
+function convertToResponsesFormat(messages) {
+  // La Responses API usa un formato diverso
+  // Prendiamo l'ultimo messaggio dell'utente come input principale
+  // e costruiamo il contesto dalla conversazione precedente
+  
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+  
+  if (!lastUserMessage) {
+    return { input: '', context: '' };
+  }
+  
+  // Costruisci il contesto dalla conversazione precedente (escluso l'ultimo messaggio)
+  const previousMessages = messages.slice(0, -1);
+  let context = '';
+  
+  if (previousMessages.length > 0) {
+    context = '\n\nPREVIOUS CONVERSATION:\n';
+    previousMessages.forEach(m => {
+      const role = m.role === 'user' ? 'User' : 'AMICA';
+      context += `${role}: ${m.content}\n`;
+    });
+  }
+  
+  return {
+    input: lastUserMessage.content,
+    context: context
+  };
+}
+
+// Funzione per estrarre il testo dalla risposta Responses API
+function extractResponseText(responseData) {
+  // La risposta può contenere diversi tipi di output
+  // Cerchiamo il messaggio con il testo
+  
+  if (responseData.output_text) {
+    return responseData.output_text;
+  }
+  
+  if (responseData.output && Array.isArray(responseData.output)) {
+    for (const item of responseData.output) {
+      if (item.type === 'message' && item.content) {
+        for (const content of item.content) {
+          if (content.type === 'output_text' && content.text) {
+            return content.text;
+          }
+        }
+      }
+    }
+  }
+  
+  return "Mi dispiace, non sono riuscita a elaborare una risposta.";
 }
 
 exports.handler = async (event, context) => {
@@ -83,6 +139,7 @@ exports.handler = async (event, context) => {
     const apiKey = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
+      console.error('[AMICA v3.0] OpenAI API key not configured');
       return {
         statusCode: 500,
         headers,
@@ -90,33 +147,51 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Prepara i messaggi con il system prompt dinamico
-    const apiMessages = [
-      { role: 'system', content: getSystemPrompt() },
-      ...messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    ];
+    console.log('[AMICA v3.0] Request received');
+    
+    // Converti i messaggi nel formato Responses API
+    const { input, context: conversationContext } = convertToResponsesFormat(messages);
+    
+    // Costruisci l'input completo con system prompt e contesto
+    const fullInput = getSystemPrompt() + conversationContext + '\n\nUser: ' + input;
+    
+    console.log('[AMICA v3.0] Calling OpenAI Responses API with web_search tool');
 
-    // Chiamata a OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Chiamata alla Responses API con web_search
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o',
-        messages: apiMessages,
-        temperature: 0.7,
-        max_tokens: 2000,
+        tools: [
+          { 
+            type: 'web_search',
+            user_location: {
+              type: 'approximate',
+              country: 'IT',
+              city: 'Rome',
+              region: 'Lazio',
+              timezone: 'Europe/Rome'
+            }
+          }
+        ],
+        input: fullInput,
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('OpenAI API error:', errorData);
+      console.error('[AMICA v3.0] OpenAI Responses API error:', errorData);
+      
+      // Se la Responses API non è disponibile, fallback a Chat Completions
+      if (response.status === 404 || response.status === 400) {
+        console.log('[AMICA v3.0] Falling back to Chat Completions API');
+        return await fallbackToChatCompletions(messages, apiKey, headers);
+      }
+      
       return {
         statusCode: response.status,
         headers,
@@ -125,20 +200,21 @@ exports.handler = async (event, context) => {
     }
 
     const data = await response.json();
-    const assistantMessage =
-      data.choices[0]?.message?.content ||
-      "Mi dispiace, non sono riuscita a elaborare una risposta.";
+    console.log('[AMICA v3.0] Response received successfully');
+    
+    // Estrai il testo dalla risposta
+    const assistantMessage = extractResponseText(data);
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         message: assistantMessage,
-        usage: data.usage,
+        webSearchUsed: data.output?.some(item => item.type === 'web_search_call') || false,
       }),
     };
   } catch (error) {
-    console.error('Chat API error:', error);
+    console.error('[AMICA v3.0] Chat API error:', error);
     return {
       statusCode: 500,
       headers,
@@ -146,3 +222,53 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+// Fallback a Chat Completions se Responses API non disponibile
+async function fallbackToChatCompletions(messages, apiKey, headers) {
+  console.log('[AMICA v3.0] Using Chat Completions fallback');
+  
+  const apiMessages = [
+    { role: 'system', content: getSystemPrompt() },
+    ...messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  ];
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    return {
+      statusCode: response.status,
+      headers,
+      body: JSON.stringify({ error: 'OpenAI API error', details: errorData }),
+    };
+  }
+
+  const data = await response.json();
+  const assistantMessage = data.choices[0]?.message?.content || 
+    "Mi dispiace, non sono riuscita a elaborare una risposta.";
+
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      message: assistantMessage,
+      webSearchUsed: false,
+      fallback: true,
+    }),
+  };
+}
