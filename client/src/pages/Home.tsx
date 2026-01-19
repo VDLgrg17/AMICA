@@ -654,7 +654,7 @@ export default function Home() {
               <Sparkles size={12} className="text-amber-400" />
               <span>AMICA v1.0</span>
               <span>•</span>
-              <span>FXG Engineering</span>
+              <span>FXG Engineering S.r.l.</span>
             </div>
           </div>
         </div>
