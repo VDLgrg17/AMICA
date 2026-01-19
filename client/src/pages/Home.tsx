@@ -720,11 +720,11 @@ export default function Home() {
             {/* Pulsante Condividi */}
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className={`px-3 py-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors flex items-center gap-2`}
+              className={`p-2 sm:px-3 sm:py-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors flex items-center gap-2`}
               title="Condividi AMICA"
             >
-              <Share2 size={16} className={isDarkMode ? 'text-white/70' : 'text-gray-600'} />
-              <span className={`text-sm font-medium ${isDarkMode ? 'text-white/70' : 'text-gray-600'}`}>Condividi</span>
+              <Share2 size={18} className={isDarkMode ? 'text-white/70' : 'text-gray-600'} />
+              <span className={`hidden sm:inline text-sm font-medium ${isDarkMode ? 'text-white/70' : 'text-gray-600'}`}>Condividi</span>
             </button>
           </div>
         </header>
