@@ -678,35 +678,35 @@ export default function Home() {
           >
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink min-w-0">
             {/* Logo 3D con riflessi e glow */}
-            <div className="relative group">
+            <div className="relative group flex-shrink-0">
               {/* Glow esterno blu */}
               <div className="absolute -inset-2 bg-gradient-to-r from-blue-400/30 to-cyan-400/30 rounded-2xl blur-lg opacity-60 group-hover:opacity-80 transition-opacity" />
               {/* Ombra profonda */}
               <div className="absolute inset-0 translate-y-2 bg-gradient-to-br from-[#1e3a5f] to-[#0f1f35] rounded-2xl blur-md opacity-50" />
               {/* Logo principale */}
-              <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3d7ab7] via-[#2d5a87] to-[#1e4a77] flex items-center justify-center shadow-2xl border border-white/20">
+              <div className="relative w-10 h-10 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#3d7ab7] via-[#2d5a87] to-[#1e4a77] flex items-center justify-center shadow-2xl border border-white/20">
                 {/* Riflesso superiore */}
-                <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/40 to-transparent rounded-t-2xl" />
+                <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/40 to-transparent rounded-t-xl sm:rounded-t-2xl" />
                 {/* Riflesso laterale */}
-                <div className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-white/20 to-transparent rounded-l-2xl" />
-                <span className="relative text-sm font-bold text-white drop-shadow-lg">AMICA</span>
+                <div className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-white/20 to-transparent rounded-l-xl sm:rounded-l-2xl" />
+                <span className="relative text-xs sm:text-sm font-bold text-white drop-shadow-lg">AMICA</span>
               </div>
               {/* Indicatore online con glow dorato */}
               <div className="absolute -bottom-1 -right-1">
                 <div className="absolute inset-0 bg-amber-400 rounded-full blur-sm animate-pulse" />
-                <div className="relative w-4 h-4 bg-gradient-to-br from-[#ffd700] to-[#cc9900] rounded-full border-2 border-white shadow-lg shadow-amber-500/50" />
+                <div className="relative w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-[#ffd700] to-[#cc9900] rounded-full border-2 border-white shadow-lg shadow-amber-500/50" />
               </div>
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h1 className={`font-semibold text-xl ${textMain}`}>AMICA</h1>
               <p className={`text-xs ${textMuted}`}>L'intelligenza artificiale italiana</p>
             </div>
           </div>
           
           {/* Controlli vocali e Dark Mode */}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-shrink-0">
             {/* Pulsante Voce: ferma audio se in riproduzione, altrimenti toggle on/off */}
             <button
               onClick={() => {
