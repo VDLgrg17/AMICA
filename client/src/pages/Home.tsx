@@ -21,6 +21,7 @@ interface Conversation {
   id: string;
   title: string;
   messages: Message[];
+  conversationSummary?: string; // Riassunto dei cicli precedenti per memoria intelligente
   createdAt: Date;
   updatedAt: Date;
 }
@@ -292,8 +293,8 @@ export default function Home() {
     }
   };
 
-  // Chiamata reale all'API OpenAI tramite backend
-  const callAmicaAPI = async (conversationMessages: Message[]): Promise<string> => {
+  // Chiamata reale all'API OpenAI tramite backend con memoria intelligente
+  const callAmicaAPI = async (conversationMessages: Message[], existingSummary?: string): Promise<{message: string, newSummary?: string}> => {
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -305,6 +306,7 @@ export default function Home() {
             role: m.role,
             content: m.content,
           })),
+          conversationSummary: existingSummary,
         }),
       });
 
@@ -315,7 +317,10 @@ export default function Home() {
       }
 
       const data = await response.json();
-      return data.message;
+      return {
+        message: data.message,
+        newSummary: data.conversationSummary,
+      };
     } catch (error) {
       console.error('Errore chiamata API:', error);
       throw error;
@@ -373,12 +378,13 @@ export default function Home() {
       // Ottieni tutti i messaggi della conversazione corrente per il contesto
       const currentConv = conversations.find(c => c.id === convId);
       const allMessages = currentConv ? [...currentConv.messages, userMessage] : [userMessage];
+      const existingSummary = currentConv?.conversationSummary;
       
-      const response = await callAmicaAPI(allMessages);
+      const { message: responseText, newSummary } = await callAmicaAPI(allMessages, existingSummary);
       const assistantMessage: Message = {
         id: generateId(),
         role: "assistant",
-        content: response,
+        content: responseText,
         timestamp: new Date(),
       };
 
@@ -387,6 +393,7 @@ export default function Home() {
           return {
             ...c,
             messages: [...c.messages, assistantMessage],
+            conversationSummary: newSummary || c.conversationSummary, // Aggiorna il summary se presente
             updatedAt: new Date(),
           };
         }
@@ -395,7 +402,7 @@ export default function Home() {
 
       // Se in modalità vocale o voce abilitata, leggi la risposta
       if (isVoiceMode || voiceEnabled) {
-        speakText(response);
+        speakText(responseText);
       }
     } catch (error) {
       console.error("Error:", error);

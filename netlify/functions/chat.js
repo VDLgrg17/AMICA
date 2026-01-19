@@ -1,5 +1,8 @@
-// Netlify Function per AMICA v3.0 - Web Search Nativo con OpenAI Responses API
-// Utilizza l'endpoint /v1/responses con tool web_search integrato
+// Netlify Function per AMICA v3.1 - Memoria intelligente con riassunto
+// - Web Search Nativo con OpenAI Responses API
+// - Limite 20 cicli + riassunto automatico
+
+const MAX_CYCLES = 20; // Numero massimo di cicli prima del riassunto
 
 // Funzione per generare il system prompt con data corrente
 function getSystemPrompt() {
@@ -49,25 +52,92 @@ YOU ARE an intelligence that thinks deeply and can search the web for current in
 YOU ARE NOT a chatbot, a search engine, a generic assistant.`;
 }
 
-// Funzione per convertire la cronologia chat nel formato Responses API
-function convertToResponsesFormat(messages) {
-  // La Responses API usa un formato diverso
-  // Prendiamo l'ultimo messaggio dell'utente come input principale
-  // e costruiamo il contesto dalla conversazione precedente
+// Funzione per generare un riassunto della conversazione
+async function generateSummary(messages, apiKey) {
+  console.log('[AMICA v3.1] Generating conversation summary...');
   
+  // Costruisci il testo della conversazione da riassumere
+  let conversationText = '';
+  messages.forEach(m => {
+    const role = m.role === 'user' ? 'User' : 'AMICA';
+    conversationText += `${role}: ${m.content}\n\n`;
+  });
+
+  const summaryPrompt = `Riassumi questa conversazione in modo conciso ma completo. 
+Cattura:
+- Chi è l'utente (nome, se menzionato)
+- Gli argomenti principali discussi
+- Le informazioni chiave emerse
+- Le preferenze o richieste specifiche dell'utente
+- Eventuali decisioni prese o conclusioni raggiunte
+
+Scrivi il riassunto in terza persona, in modo che possa essere usato come contesto per continuare la conversazione.
+Massimo 300 parole.
+
+CONVERSAZIONE DA RIASSUMERE:
+${conversationText}`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini', // Usiamo il modello più economico per i riassunti
+        messages: [
+          { role: 'system', content: 'Sei un assistente che crea riassunti concisi e informativi di conversazioni.' },
+          { role: 'user', content: summaryPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[AMICA v3.1] Summary generation failed');
+      return null;
+    }
+
+    const data = await response.json();
+    const summary = data.choices[0]?.message?.content;
+    console.log('[AMICA v3.1] Summary generated successfully');
+    return summary;
+  } catch (error) {
+    console.error('[AMICA v3.1] Summary generation error:', error);
+    return null;
+  }
+}
+
+// Funzione per convertire la cronologia chat nel formato Responses API
+// con gestione della memoria intelligente
+function convertToResponsesFormat(messages, existingSummary = null) {
   const lastUserMessage = messages.filter(m => m.role === 'user').pop();
   
   if (!lastUserMessage) {
     return { input: '', context: '' };
   }
   
-  // Costruisci il contesto dalla conversazione precedente (escluso l'ultimo messaggio)
-  const previousMessages = messages.slice(0, -1);
+  // Calcola il numero di cicli (ogni ciclo = 1 domanda + 1 risposta)
+  const userMessages = messages.filter(m => m.role === 'user');
+  const cycleCount = userMessages.length;
+  
   let context = '';
   
-  if (previousMessages.length > 0) {
-    context = '\n\nPREVIOUS CONVERSATION:\n';
-    previousMessages.forEach(m => {
+  // Aggiungi il riassunto se presente
+  if (existingSummary) {
+    context += `\n\nCONVERSATION SUMMARY (previous cycles):\n${existingSummary}\n`;
+  }
+  
+  // Prendi solo gli ultimi MAX_CYCLES cicli per la conversazione recente
+  // Un ciclo = 2 messaggi (user + assistant)
+  const maxMessages = MAX_CYCLES * 2;
+  const recentMessages = messages.slice(-maxMessages, -1); // Escludi l'ultimo messaggio (lo aggiungiamo dopo)
+  
+  if (recentMessages.length > 0) {
+    context += '\n\nRECENT CONVERSATION:\n';
+    recentMessages.forEach(m => {
       const role = m.role === 'user' ? 'User' : 'AMICA';
       context += `${role}: ${m.content}\n`;
     });
@@ -75,15 +145,13 @@ function convertToResponsesFormat(messages) {
   
   return {
     input: lastUserMessage.content,
-    context: context
+    context: context,
+    cycleCount: cycleCount
   };
 }
 
 // Funzione per estrarre il testo dalla risposta Responses API
 function extractResponseText(responseData) {
-  // La risposta può contenere diversi tipi di output
-  // Cerchiamo il messaggio con il testo
-  
   if (responseData.output_text) {
     return responseData.output_text;
   }
@@ -126,7 +194,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { messages } = JSON.parse(event.body);
+    const { messages, conversationSummary } = JSON.parse(event.body);
 
     if (!messages || !Array.isArray(messages)) {
       return {
@@ -139,7 +207,7 @@ exports.handler = async (event, context) => {
     const apiKey = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
-      console.error('[AMICA v3.0] OpenAI API key not configured');
+      console.error('[AMICA v3.1] OpenAI API key not configured');
       return {
         statusCode: 500,
         headers,
@@ -147,15 +215,42 @@ exports.handler = async (event, context) => {
       };
     }
 
-    console.log('[AMICA v3.0] Request received');
+    console.log('[AMICA v3.1] Request received');
     
     // Converti i messaggi nel formato Responses API
-    const { input, context: conversationContext } = convertToResponsesFormat(messages);
+    const { input, context: conversationContext, cycleCount } = convertToResponsesFormat(messages, conversationSummary);
+    
+    console.log(`[AMICA v3.1] Cycle count: ${cycleCount}, Max cycles: ${MAX_CYCLES}`);
+    
+    // Verifica se dobbiamo generare un nuovo riassunto
+    let newSummary = conversationSummary;
+    let summaryGenerated = false;
+    
+    // Genera riassunto quando raggiungiamo il limite di cicli
+    // e non abbiamo già un riassunto per questi cicli
+    if (cycleCount > 0 && cycleCount % MAX_CYCLES === 0 && messages.length > 2) {
+      // Prendi i messaggi da riassumere (quelli più vecchi)
+      const messagesToSummarize = messages.slice(0, -2); // Escludi gli ultimi 2 (ultimo ciclo)
+      
+      if (messagesToSummarize.length > 0) {
+        const generatedSummary = await generateSummary(messagesToSummarize, apiKey);
+        if (generatedSummary) {
+          // Combina con il riassunto esistente se presente
+          if (conversationSummary) {
+            newSummary = `${conversationSummary}\n\nAdditional context:\n${generatedSummary}`;
+          } else {
+            newSummary = generatedSummary;
+          }
+          summaryGenerated = true;
+          console.log('[AMICA v3.1] New summary generated and combined');
+        }
+      }
+    }
     
     // Costruisci l'input completo con system prompt e contesto
     const fullInput = getSystemPrompt() + conversationContext + '\n\nUser: ' + input;
     
-    console.log('[AMICA v3.0] Calling OpenAI Responses API with web_search tool');
+    console.log('[AMICA v3.1] Calling OpenAI Responses API with web_search tool');
 
     // Chiamata alla Responses API con web_search
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -184,12 +279,12 @@ exports.handler = async (event, context) => {
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('[AMICA v3.0] OpenAI Responses API error:', errorData);
+      console.error('[AMICA v3.1] OpenAI Responses API error:', errorData);
       
       // Se la Responses API non è disponibile, fallback a Chat Completions
       if (response.status === 404 || response.status === 400) {
-        console.log('[AMICA v3.0] Falling back to Chat Completions API');
-        return await fallbackToChatCompletions(messages, apiKey, headers);
+        console.log('[AMICA v3.1] Falling back to Chat Completions API');
+        return await fallbackToChatCompletions(messages, apiKey, headers, newSummary, summaryGenerated);
       }
       
       return {
@@ -200,7 +295,7 @@ exports.handler = async (event, context) => {
     }
 
     const data = await response.json();
-    console.log('[AMICA v3.0] Response received successfully');
+    console.log('[AMICA v3.1] Response received successfully');
     
     // Estrai il testo dalla risposta
     const assistantMessage = extractResponseText(data);
@@ -211,10 +306,13 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         message: assistantMessage,
         webSearchUsed: data.output?.some(item => item.type === 'web_search_call') || false,
+        conversationSummary: newSummary,
+        summaryGenerated: summaryGenerated,
+        cycleCount: cycleCount,
       }),
     };
   } catch (error) {
-    console.error('[AMICA v3.0] Chat API error:', error);
+    console.error('[AMICA v3.1] Chat API error:', error);
     return {
       statusCode: 500,
       headers,
@@ -224,12 +322,22 @@ exports.handler = async (event, context) => {
 };
 
 // Fallback a Chat Completions se Responses API non disponibile
-async function fallbackToChatCompletions(messages, apiKey, headers) {
-  console.log('[AMICA v3.0] Using Chat Completions fallback');
+async function fallbackToChatCompletions(messages, apiKey, headers, summary, summaryGenerated) {
+  console.log('[AMICA v3.1] Using Chat Completions fallback');
+  
+  // Costruisci i messaggi con il riassunto se presente
+  let systemContent = getSystemPrompt();
+  if (summary) {
+    systemContent += `\n\nCONVERSATION SUMMARY (previous cycles):\n${summary}`;
+  }
+  
+  // Limita i messaggi agli ultimi MAX_CYCLES cicli
+  const maxMessages = MAX_CYCLES * 2;
+  const recentMessages = messages.slice(-maxMessages);
   
   const apiMessages = [
-    { role: 'system', content: getSystemPrompt() },
-    ...messages.map((m) => ({
+    { role: 'system', content: systemContent },
+    ...recentMessages.map((m) => ({
       role: m.role,
       content: m.content,
     })),
@@ -269,6 +377,8 @@ async function fallbackToChatCompletions(messages, apiKey, headers) {
       message: assistantMessage,
       webSearchUsed: false,
       fallback: true,
+      conversationSummary: summary,
+      summaryGenerated: summaryGenerated,
     }),
   };
 }
