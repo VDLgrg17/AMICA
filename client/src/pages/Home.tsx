@@ -773,7 +773,7 @@ export default function Home() {
                 {/* Card suggerimenti 3D con profondità */}
                 <div className="grid gap-4 sm:grid-cols-2 text-left">
                   {[
-                    { text: "Mi servono delle informazioni su argomenti diversi", icon: "💡", accent: "amber" },
+                    { text: "Mi servono delle informazioni. Informazioni e curiosità.", icon: "💡", accent: "amber" },
                     { text: "Aiutami a ragionare su un problema", icon: "🧠", accent: "blue" },
                     { text: "Dammi un'opinione su un argomento", icon: "💬", accent: "amber" },
                     { text: "Parliamo di filosofia o scienza", icon: "🔬", accent: "blue" },
