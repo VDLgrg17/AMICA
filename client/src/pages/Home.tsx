@@ -764,14 +764,13 @@ export default function Home() {
               )}
             </button>
 
-            {/* Pulsante Condividi - sempre visibile, testo solo su desktop */}
+            {/* Pulsante Condividi - sempre visibile con testo */}
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className={`p-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors flex items-center gap-2`}
+              className="px-3 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-1.5"
               title="Condividi AMICA"
             >
-              <Share2 size={18} className={isDarkMode ? 'text-white/70' : 'text-gray-600'} />
-              <span className={`hidden md:inline text-sm font-medium ${isDarkMode ? 'text-white/70' : 'text-gray-600'}`}>Condividi</span>
+              <span className="text-xs sm:text-sm font-semibold text-white uppercase tracking-wide">Condividi</span>
             </button>
           </div>
         </header>
