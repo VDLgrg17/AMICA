@@ -764,10 +764,14 @@ export default function Home() {
               )}
             </button>
 
-            {/* Pulsante Condividi - sempre visibile con testo */}
+            {/* Pulsante Condividi - sempre visibile con testo, colori AMICA */}
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className="px-3 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-1.5"
+              className={`px-3 py-2 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 ${
+                isDarkMode 
+                  ? 'bg-gradient-to-r from-[#3d7ab7] to-[#2d5a87] hover:from-[#4d8ac7] hover:to-[#3d6a97] border border-white/20' 
+                  : 'bg-gradient-to-r from-[#3d7ab7] to-[#2d5a87] hover:from-[#4d8ac7] hover:to-[#3d6a97]'
+              }`}
               title="Condividi AMICA"
             >
               <span className="text-xs sm:text-sm font-semibold text-white uppercase tracking-wide">Condividi</span>
