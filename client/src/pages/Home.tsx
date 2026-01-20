@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Loader2, Trash2, Menu, X, MessageSquare, Plus, Sparkles, Mic, MicOff, Moon, Sun, Phone, PhoneOff, Volume2, VolumeX, Share2 } from "lucide-react";
 import { InstallPrompt } from "../components/InstallPrompt";
 import { ShareModal } from "../components/ShareModal";
+import { detectLanguage, getTranslations, type Language } from "../i18n/translations";
 
 // Types
 interface Message {
@@ -73,6 +74,10 @@ export default function Home() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [justInstalled, setJustInstalled] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [language, setLanguage] = useState<Language>('it');
+  
+  // Traduzioni basate sulla lingua rilevata
+  const t = getTranslations(language);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -269,6 +274,12 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Rileva la lingua del browser all'avvio
+  useEffect(() => {
+    const detectedLang = detectLanguage();
+    setLanguage(detectedLang);
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("amica-conversations");
@@ -536,7 +547,7 @@ export default function Home() {
               <button
                 onClick={() => setIsDarkMode(!isDarkMode)}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                title={isDarkMode ? "Passa a Light Mode" : "Passa a Dark Mode"}
+                title={isDarkMode ? t.lightMode : t.darkMode}
               >
                 {isDarkMode ? (
                   <Sun size={16} className="text-amber-400" />
@@ -561,7 +572,7 @@ export default function Home() {
                 </div>
                 <div>
                   <span className="font-semibold text-white text-base drop-shadow">AMICA</span>
-                  <p className="text-[11px] text-cyan-300/80">L'intelligenza italiana</p>
+                  <p className="text-[11px] text-cyan-300/80">{t.subtitle}</p>
                 </div>
               </div>
               <button
@@ -590,7 +601,7 @@ export default function Home() {
                 {/* Riflesso superiore */}
                 <div className="absolute inset-x-2 top-1 h-3 bg-gradient-to-b from-white/40 to-transparent rounded-full" />
                 <Plus size={16} strokeWidth={2.5} className="relative" />
-                <span className="relative">Nuova chat</span>
+                <span className="relative">{t.newChat}</span>
                 <Sparkles size={14} className="relative opacity-70" />
               </div>
             </button>
@@ -605,8 +616,8 @@ export default function Home() {
                     <MessageSquare className="text-white/40" size={28} />
                   </div>
                 </div>
-                <p className="text-white/50 text-sm">Nessuna conversazione</p>
-                <p className="text-white/30 text-xs mt-1">Inizia a chattare con AMICA</p>
+                <p className="text-white/50 text-sm">{t.noConversations}</p>
+                <p className="text-white/30 text-xs mt-1">{t.startChatting}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -723,7 +734,7 @@ export default function Home() {
                   ? 'bg-red-500 hover:bg-red-600' 
                   : isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
               }`}
-              title={isSpeaking ? "Ferma la voce" : (voiceEnabled ? "Disattiva risposte vocali" : "Attiva risposte vocali")}
+              title={isSpeaking ? t.stopAudio : (voiceEnabled ? t.disableVoice : t.enableVoice)}
             >
               {isSpeaking ? (
                 <VolumeX size={18} className="text-white" />
@@ -742,7 +753,7 @@ export default function Home() {
                   ? 'bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg shadow-green-500/30 animate-pulse' 
                   : isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
               }`}
-              title={isVoiceMode ? "Termina conversazione vocale" : "Avvia conversazione vocale"}
+              title={isVoiceMode ? t.stopVoice : t.startVoice}
             >
               {isVoiceMode ? (
                 <PhoneOff size={18} className="text-white" />
@@ -755,7 +766,7 @@ export default function Home() {
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-2 rounded-lg ${isDarkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'} transition-colors`}
-              title={isDarkMode ? "Passa a Light Mode" : "Passa a Dark Mode"}
+              title={isDarkMode ? t.lightMode : t.darkMode}
             >
               {isDarkMode ? (
                 <Sun size={18} className="text-amber-400" />
@@ -768,9 +779,9 @@ export default function Home() {
             <button
               onClick={() => setIsShareModalOpen(true)}
               className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#3d7ab7] to-[#2d5a87] hover:from-[#4d8ac7] hover:to-[#3d6a97] transition-all shadow-md hover:shadow-lg border border-white/20"
-              title="Condividi AMICA"
+              title={t.share}
             >
-              <span className="text-xs sm:text-sm font-semibold text-white uppercase tracking-wide">Condividi</span>
+              <span className="text-xs sm:text-sm font-semibold text-white uppercase tracking-wide">{t.share}</span>
             </button>
           </div>
         </header>
@@ -809,20 +820,74 @@ export default function Home() {
                 </div>
 
                 <h2 className={`text-3xl font-semibold mb-4 ${textMain}`}>
-                  Benvenuto in <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2d5a87] to-[#4d8ac7]">AMICA</span>
+                  {t.welcome} <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2d5a87] to-[#4d8ac7]">AMICA</span>
                 </h2>
-                <p className={`${textSecondary} mb-10 text-base leading-relaxed max-w-lg mx-auto`}>
-                  Sono <span className="font-semibold text-[#2d5a87]">AMICA</span>, l'intelligenza artificiale italiana. 
-                  Non sono un chatbot generico: sono un'intelligenza con cui vale la pena parlare.
+                <p className={`${textSecondary} mb-8 text-base leading-relaxed max-w-lg mx-auto`}>
+                  {t.heroDescription}
                 </p>
+
+                {/* INVITO VOCALE - Pulsante telefono grande */}
+                <button
+                  onClick={toggleVoiceMode}
+                  className={`group relative mb-10 mx-auto block transition-all duration-300 ${isVoiceMode ? 'scale-105' : 'hover:scale-105'}`}
+                >
+                  {/* Glow animato */}
+                  <div className={`absolute -inset-4 rounded-3xl blur-xl transition-all duration-300 ${
+                    isVoiceMode 
+                      ? 'bg-gradient-to-r from-green-500/40 to-emerald-500/40 animate-pulse' 
+                      : 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 group-hover:from-blue-500/30 group-hover:to-cyan-500/30'
+                  }`} />
+                  
+                  {/* Card principale */}
+                  <div className={`relative px-8 py-6 rounded-2xl border transition-all duration-300 ${
+                    isVoiceMode
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 border-green-400/50 shadow-lg shadow-green-500/30'
+                      : isDarkMode 
+                        ? 'bg-gradient-to-br from-[#1e3a5f] to-[#0f1f35] border-white/20 group-hover:border-white/30' 
+                        : 'bg-gradient-to-br from-white to-gray-50 border-gray-200 group-hover:border-blue-300'
+                  } shadow-xl`}>
+                    {/* Riflesso superiore */}
+                    <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/10 to-transparent rounded-t-2xl pointer-events-none" />
+                    
+                    <div className="flex items-center gap-4">
+                      {/* Icona telefono grande */}
+                      <div className={`relative w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+                        isVoiceMode
+                          ? 'bg-white/20'
+                          : isDarkMode ? 'bg-gradient-to-br from-[#3d7ab7] to-[#2d5a87]' : 'bg-gradient-to-br from-[#3d7ab7] to-[#2d5a87]'
+                      }`}>
+                        <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent rounded-t-2xl" />
+                        {isVoiceMode ? (
+                          <PhoneOff size={28} className="text-white relative" />
+                        ) : (
+                          <Phone size={28} className="text-white relative" />
+                        )}
+                      </div>
+                      
+                      {/* Testo */}
+                      <div className="text-left">
+                        <p className={`text-lg font-bold uppercase tracking-wide ${
+                          isVoiceMode ? 'text-white' : isDarkMode ? 'text-white' : 'text-[#2d5a87]'
+                        }`}>
+                          {t.voiceInviteTitle}
+                        </p>
+                        <p className={`text-sm ${
+                          isVoiceMode ? 'text-white/80' : isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
+                          {t.voiceInviteSubtitle}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </button>
 
                 {/* Card suggerimenti 3D con profondità */}
                 <div className="grid gap-4 sm:grid-cols-2 text-left">
                   {[
-                    { text: "Mi servono delle informazioni. Informazioni e curiosità.", icon: "💡", accent: "amber" },
-                    { text: "Aiutami a ragionare su un problema", icon: "🧠", accent: "blue" },
-                    { text: "Dammi un'opinione su un argomento", icon: "💬", accent: "amber" },
-                    { text: "Parliamo di filosofia o scienza", icon: "🔬", accent: "blue" },
+                    { text: t.quickAction1, icon: "💡", accent: "amber" },
+                    { text: t.quickAction2, icon: "🧠", accent: "blue" },
+                    { text: t.quickAction3, icon: "💬", accent: "amber" },
+                    { text: t.quickAction4, icon: "🔬", accent: "blue" },
                   ].map((suggestion, i) => (
                     <button
                       key={i}
@@ -940,7 +1005,7 @@ export default function Home() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyPress}
-                    placeholder="Scrivi un messaggio ad AMICA..."
+                    placeholder={t.inputPlaceholder}
                     rows={1}
                     className={`w-full pl-5 pr-14 py-4 
                       ${isDarkMode 
@@ -970,7 +1035,7 @@ export default function Home() {
                         ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse' 
                         : `${isDarkMode ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`
                     }`}
-                    title={isListening ? "Ferma dettatura" : "Avvia dettatura vocale"}
+                    title={isListening ? t.stopAudio : t.startDictation}
                   >
                     {isListening ? <MicOff size={20} /> : <Mic size={20} />}
                   </button>
@@ -1005,7 +1070,7 @@ export default function Home() {
               </div>
             </div>
             <p className={`text-xs ${textMuted} text-center mt-4`}>
-              AMICA può commettere errori. Verifica le informazioni importanti.
+              {t.disclaimer}
             </p>
           </div>
         </div>
