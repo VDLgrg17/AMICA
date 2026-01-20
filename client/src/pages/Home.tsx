@@ -87,6 +87,40 @@ export default function Home() {
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const messages = currentConversation?.messages || [];
 
+  // Funzione per rilevare se una frase è una domanda e aggiungere il punto di domanda
+  const addQuestionMark = (text: string): string => {
+    const trimmed = text.trim();
+    if (!trimmed) return trimmed;
+    
+    // Se termina già con punteggiatura, non modificare
+    if (/[.!?;:]$/.test(trimmed)) return trimmed;
+    
+    // Pattern interrogativi per diverse lingue
+    const questionPatterns = [
+      // Italiano
+      /^(chi|che|cosa|come|quando|dove|perch[eé]|quale|quali|quanto|quanta|quanti|quante|c['’]è|ci sono|è vero|sai|puoi|potresti|sapresti|dimmi|spiegami|cos['’]è)\b/i,
+      // Inglese
+      /^(who|what|when|where|why|how|which|whose|whom|is|are|was|were|do|does|did|can|could|would|should|will|shall|may|might|have|has|had|isn['’]t|aren['’]t|don['’]t|doesn['’]t|didn['’]t|won['’]t|can['’]t|couldn['’]t|wouldn['’]t|shouldn['’]t)\b/i,
+      // Francese
+      /^(qui|que|quoi|comment|quand|o[uù]|pourquoi|quel|quelle|quels|quelles|combien|est-ce|qu['’]est|y a-t-il|peux|pouvez|sais|savez)\b/i,
+      // Spagnolo
+      /^(qui[eé]n|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|por qu[eé]|cu[aá]l|cu[aá]les|cu[aá]nto|cu[aá]nta|cu[aá]ntos|cu[aá]ntas|hay|es|son|puedes|puede|sabes|sabe)\b/i,
+      // Tedesco
+      /^(wer|was|wann|wo|warum|wie|welche|welcher|welches|wieviel|wieviele|ist|sind|kann|kannst|k[oö]nnen|wei[sß]t|wei[sß])\b/i,
+      // Portoghese
+      /^(quem|que|o que|como|quando|onde|por que|porqu[eê]|qual|quais|quanto|quanta|quantos|quantas|[eé]|s[aã]o|pode|podes|sabe|sabes)\b/i,
+    ];
+    
+    // Verifica se la frase corrisponde a un pattern interrogativo
+    const isQuestion = questionPatterns.some(pattern => pattern.test(trimmed));
+    
+    if (isQuestion) {
+      return trimmed + '?';
+    }
+    
+    return trimmed;
+  };
+
   // Inizializza Speech Recognition
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -100,16 +134,24 @@ export default function Home() {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0].transcript)
           .join('');
-        setInputValue(transcript);
         
-        // Se il risultato è finale e siamo in modalità vocale, invia automaticamente
+        // Se il risultato è finale, applica la correzione del punto di domanda
         const isFinal = event.results[event.results.length - 1].isFinal;
-        if (isFinal && transcript.trim()) {
-          // Usa setTimeout per permettere all'input di aggiornarsi
-          setTimeout(() => {
-            const sendBtn = document.getElementById('send-button');
-            if (sendBtn) sendBtn.click();
-          }, 100);
+        if (isFinal) {
+          const correctedTranscript = addQuestionMark(transcript);
+          setInputValue(correctedTranscript);
+          
+          // Se siamo in modalità vocale, invia automaticamente
+          if (correctedTranscript.trim()) {
+            // Usa setTimeout per permettere all'input di aggiornarsi
+            setTimeout(() => {
+              const sendBtn = document.getElementById('send-button');
+              if (sendBtn) sendBtn.click();
+            }, 100);
+          }
+        } else {
+          // Mostra il testo intermedio senza correzione
+          setInputValue(transcript);
         }
       };
 
